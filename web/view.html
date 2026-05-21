@@ -267,7 +267,7 @@ video { max-width: 100%; max-height: 100%; object-fit: contain; background: #000
 <body>
 <div id="app">
   <div id="toolbar">
-    <span style="font-size:13px;color:#888;margin-right:auto">Remote Browser <span style="color:#555;font-size:10px">v9</span></span>
+    <span style="font-size:13px;color:#888;margin-right:auto">Remote Browser</span>
     <button id="btn-connect">Connect</button>
   </div>
   <div id="tab-bar">
@@ -622,24 +622,10 @@ reloadBtn.onclick = async () => {
 };
 goBtn.onclick = () => navigateToURL(urlInput.value);
 
-// URL bar IME-aware Enter handling
-let urlBarComposing = false;
-let urlBarLastCompositionEnd = 0;
-urlInput.addEventListener("compositionstart", () => {
-  urlBarComposing = true;
-  debugLog("nav", "url_composition_start");
-});
-urlInput.addEventListener("compositionend", () => {
-  urlBarComposing = false;
-  urlBarLastCompositionEnd = performance.now();
-  debugLog("nav", "url_composition_end");
-});
-
 // Prevent URL input keystrokes from being forwarded to remote,
 // AND handle Enter for navigation — single capture-phase listener.
 urlInput.addEventListener("keydown", (e) => {
   e.stopPropagation();
-  debugLog("nav", "url_keydown", { key: e.key, code: e.code, isComposing: e.isComposing, keyCode: e.keyCode });
   if (e.key === "Enter" && !e.isComposing) {
     e.preventDefault();
     debugLog("nav", "enter", { value: urlInput.value });
@@ -653,7 +639,6 @@ urlInput.addEventListener("keyup", (e) => {
   if (e.key === "Meta" || e.key === "Control" || e.key === "Shift" || e.key === "Alt") return;
   e.stopPropagation();
 }, true);
-
 
 
 // --- Binary protocol helpers ---
@@ -770,11 +755,9 @@ function videoCoords(e) {
 }
 
 function mapButton(e) {
-  // 0=left, 1=middle, 2=right
-  if (e.button === 0) return 1;
-  if (e.button === 1) return 2;
-  if (e.button === 2) return 3;
-  return 1;
+  // Web API: 0=left, 1=middle, 2=right
+  // bb-viewer expects same 0-indexed: 0=left, 1=middle, 2=right
+  return e.button;
 }
 
 // --- Event handlers ---
