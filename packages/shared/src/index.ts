@@ -40,8 +40,11 @@ export {
 
 export {
   type DaemonInfo,
+  BB_BROWSER_ROOT,
   DAEMON_DIR,
   DAEMON_JSON,
+  getInstanceId,
+  getInstanceDir,
   readDaemonJson,
   isProcessAlive,
   httpJson,

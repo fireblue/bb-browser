@@ -11,10 +11,22 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
-// Paths
+// Paths — instance-aware
 // ---------------------------------------------------------------------------
 
-export const DAEMON_DIR = process.env.BB_BROWSER_HOME || join(homedir(), ".bb-browser");
+export const BB_BROWSER_ROOT = process.env.BB_BROWSER_HOME || join(homedir(), ".bb-browser");
+
+export function getInstanceId(): string {
+  return process.env.BB_BROWSER_INSTANCE || "default";
+}
+
+export function getInstanceDir(instanceId?: string): string {
+  const id = instanceId ?? getInstanceId();
+  if (id === "default") return BB_BROWSER_ROOT;
+  return join(BB_BROWSER_ROOT, "instances", id);
+}
+
+export const DAEMON_DIR = getInstanceDir();
 export const DAEMON_JSON = join(DAEMON_DIR, "daemon.json");
 
 // ---------------------------------------------------------------------------

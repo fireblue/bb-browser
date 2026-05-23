@@ -2,8 +2,8 @@
  * bb-browser 共享常量
  */
 
-/** Daemon HTTP 服务端口 */
-export const DAEMON_PORT = 19824;
+/** Daemon HTTP 服务端口（0 = OS 动态分配，支持多实例） */
+export const DAEMON_PORT = 0;
 
 /** Daemon 主机地址 */
 export const DAEMON_HOST = "127.0.0.1";
