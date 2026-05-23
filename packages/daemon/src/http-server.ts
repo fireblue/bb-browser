@@ -52,7 +52,7 @@ export class HttpServer {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  async start(): Promise<void> {
+  async start(): Promise<number> {
     return new Promise((resolve, reject) => {
       this.server = createServer((req, res) => {
         this.handleRequest(req, res);
@@ -62,7 +62,9 @@ export class HttpServer {
 
       this.server.listen(this.port, this.host, () => {
         this.startTime = Date.now();
-        resolve();
+        const addr = this.server!.address();
+        const actualPort = typeof addr === "object" && addr ? addr.port : this.port;
+        resolve(actualPort);
       });
     });
   }

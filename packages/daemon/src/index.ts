@@ -16,7 +16,7 @@ import { mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { DAEMON_PORT, DAEMON_HOST } from "@bb-browser/shared";
+import { DAEMON_PORT, DAEMON_HOST, getInstanceDir, getInstanceId } from "@bb-browser/shared";
 import { HttpServer } from "./http-server.js";
 import { CdpConnection } from "./cdp-connection.js";
 import { TabStateManager } from "./tab-state.js";
@@ -26,9 +26,17 @@ import { HubBridge } from "./hub-bridge.js";
 // Constants
 // ---------------------------------------------------------------------------
 
-const DAEMON_DIR = process.env.BB_BROWSER_HOME || path.join(os.homedir(), ".bb-browser");
-const DAEMON_JSON = path.join(DAEMON_DIR, "daemon.json");
 const DEFAULT_CDP_PORT = 9222;
+
+function getDaemonPaths() {
+  const instanceId = getInstanceId();
+  const daemonDir = getInstanceDir(instanceId);
+  return {
+    instanceId,
+    daemonDir,
+    daemonJson: path.join(daemonDir, "daemon.json"),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -70,6 +78,10 @@ function parseOptions(): DaemonOptions {
         type: "string",
         default: "",
       },
+      instance: {
+        type: "string",
+        default: "",
+      },
       hub: {
         type: "string",
         default: "",
@@ -99,6 +111,7 @@ Options:
       --cdp-host <host>      Chrome CDP host (default: 127.0.0.1)
       --cdp-port <port>      Chrome CDP port (default: ${DEFAULT_CDP_PORT})
       --token <token>        Bearer auth token (auto-generated if empty)
+      --instance <id>        Instance ID for multi-user isolation (default: "default")
       --hub <url>            Pinix Hub gRPC URL (enables Hub mode)
       --hub-token <token>    Pinix Hub auth token
   -h, --help                 Show this help message
@@ -114,6 +127,12 @@ Hub mode:
   directly via CDP without HTTP round-trips.
 `);
     process.exit(0);
+  }
+
+  // --instance flag overrides BB_BROWSER_INSTANCE env var
+  const instanceFlag = values.instance?.trim();
+  if (instanceFlag) {
+    process.env.BB_BROWSER_INSTANCE = instanceFlag;
   }
 
   // Auto-generate token if not provided
@@ -159,16 +178,18 @@ interface DaemonInfo {
 }
 
 function writeDaemonJson(info: DaemonInfo): void {
+  const { daemonDir, daemonJson } = getDaemonPaths();
   try {
-    mkdirSync(DAEMON_DIR, { recursive: true });
-    writeFileSync(DAEMON_JSON, JSON.stringify(info), { mode: 0o600 });
+    mkdirSync(daemonDir, { recursive: true });
+    writeFileSync(daemonJson, JSON.stringify(info), { mode: 0o600 });
   } catch {}
 }
 
 function cleanupDaemonJson(): void {
-  if (existsSync(DAEMON_JSON)) {
+  const { daemonJson } = getDaemonPaths();
+  if (existsSync(daemonJson)) {
     try {
-      unlinkSync(DAEMON_JSON);
+      unlinkSync(daemonJson);
     } catch {}
   }
 }
@@ -194,8 +215,7 @@ async function discoverCdpPort(host: string, port: number): Promise<{ host: stri
     }
   } catch {}
 
-  // Try reading managed browser port file
-  const managedPortFile = path.join(DAEMON_DIR, "browser", "cdp-port");
+  const managedPortFile = path.join(getDaemonPaths().daemonDir, "browser", "cdp-port");
   try {
     const rawPort = readFileSync(managedPortFile, "utf8").trim();
     const managedPort = parseInt(rawPort, 10);
@@ -228,8 +248,9 @@ async function discoverCdpPort(host: string, port: number): Promise<{ host: stri
 // ---------------------------------------------------------------------------
 
 function readStaleDaemonJson(): DaemonInfo | null {
+  const { daemonJson } = getDaemonPaths();
   try {
-    const raw = readFileSync(DAEMON_JSON, "utf8");
+    const raw = readFileSync(daemonJson, "utf8");
     const info = JSON.parse(raw) as DaemonInfo;
     if (typeof info.pid === "number" && typeof info.host === "string" && typeof info.port === "number" && typeof info.token === "string") {
       return info;
@@ -369,18 +390,18 @@ async function main(): Promise<void> {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  await httpServer.start();
+  const actualPort = await httpServer.start();
   writeDaemonJson({
     pid: process.pid,
     host: options.host,
-    port: options.port,
+    port: actualPort,
     token: options.token,
     cdpHost: cdpEndpoint.host,
     cdpPort: cdpEndpoint.port,
   });
 
   console.error(
-    `[Daemon] HTTP server listening on http://${options.host}:${options.port}`,
+    `[Daemon] HTTP server listening on http://${options.host}:${actualPort} (instance: ${getDaemonPaths().instanceId})`,
   );
   console.error(`[Daemon] Auth token: ${options.token}`);
 
