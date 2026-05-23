@@ -330,12 +330,11 @@ describe("core bug: daemon spawned without --cdp-port fails silently (#136)", ()
   });
 
   it("daemon with explicit --cdp-port pointing to fake CDP → starts successfully", async () => {
-    // This proves the fix: if CLI passes --cdp-port to daemon, it works
-    const cdpPort = 39992;
-    const fakeCdp = await startFakeCdpServer(cdpPort);
+    const fakeCdp = await startFakeCdpServer(0);
+    const cdpPort = (fakeCdp.address() as import("node:net").AddressInfo).port;
 
     try {
-      const child = spawn(TSX, [DAEMON_ENTRY, "--cdp-port", String(cdpPort), "--port", "39991"], {
+      const child = spawn(TSX, [DAEMON_ENTRY, "--cdp-port", String(cdpPort), "--port", "0"], {
         detached: true,
         stdio: "ignore",
       });
