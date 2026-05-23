@@ -105,6 +105,8 @@ bb-browser - AI Agent 浏览器自动化工具
   -d, --depth <n>      限制树深度（snap 命令）
   -s, --selector <sel> 限定 CSS 选择器范围（snap 命令）
   --tab <tabId>        指定操作的标签页 ID
+  --instance <id>      使用指定浏览器实例（独立 profile 和登录态）
+  --mcp                启动 MCP server
   --help, -h           显示帮助信息
   --version, -v        显示版本号
 `.trim();
@@ -126,6 +128,7 @@ interface ParsedArgs {
     openclaw?: boolean;
     port?: number;
     since?: string;
+    instance?: string;
   };
 }
 
@@ -197,6 +200,12 @@ function parseArgs(argv: string[]): ParsedArgs {
       skipNext = true;
     } else if (arg === "--tab") {
       skipNext = true;
+    } else if (arg === "--instance") {
+      skipNext = true;
+      const nextIdx = args.indexOf(arg) + 1;
+      if (nextIdx < args.length) {
+        result.flags.instance = args[nextIdx];
+      }
     } else if (arg === "--since") {
       skipNext = true;
     } else if (arg === "--method") {
@@ -230,6 +239,11 @@ function requireTab(command: string, globalTabId: string | undefined): string {
 async function main(): Promise<void> {
   const parsed = parseArgs(process.argv);
   setJqExpression(parsed.flags.jq);
+
+  // --instance sets BB_BROWSER_INSTANCE before any daemon/Chrome interaction
+  if (parsed.flags.instance) {
+    process.env.BB_BROWSER_INSTANCE = parsed.flags.instance;
+  }
 
   // Parse global --tab
   const tabArgIdx = process.argv.indexOf('--tab');
