@@ -248,6 +248,25 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (process.argv.includes("--mcp") || parsed.command === "mcp") {
+    const { dirname, resolve } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const { existsSync } = await import("node:fs");
+    const dir = dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+      resolve(dir, "mcp.js"),
+      resolve(dir, "../../mcp/dist/index.js"),
+    ];
+    const mcpEntry = candidates.find(c => existsSync(c));
+    if (!mcpEntry) {
+      console.error("MCP server not found. Run: pnpm build");
+      process.exit(1);
+    }
+    const { execFileSync } = await import("node:child_process");
+    execFileSync(process.execPath, [mcpEntry], { stdio: "inherit", env: process.env });
+    return;
+  }
+
   if (!parsed.command) {
     console.log(HELP_TEXT);
     return;
