@@ -222,7 +222,8 @@ bb-browser trace status                             # 查看录制状态
 ```bash
 --json               # 以 JSON 格式输出（所有命令通用）
 --tab <tabId>        # 指定操作的标签页 ID（几乎所有命令通用）
---mcp                # 启动 MCP server（用于 Claude Code / Cursor 等 AI 工具）
+--instance <id>      # 使用指定浏览器实例（独立 profile 和登录态）
+--mcp                # 启动 MCP server
 ```
 
 ## Ref 使用说明
@@ -294,22 +295,68 @@ bb-browser click @1
 
 `-i` 只显示可交互元素，过滤掉大量无关内容。
 
-## MCP 集成
+## 多实例 — 不同账号登录同一个网站
 
-bb-browser 提供 MCP server，可与 Claude Code / Cursor 等 AI 工具集成：
+`--instance <id>` 创建独立的浏览器实例，每个实例有独立的 Chrome profile（Cookie、登录态、历史记录完全隔离）。
 
 ```bash
-# 启动 MCP server
-bb-browser --mcp
+# 用不同实例登录同一网站的不同账号
+bb-browser --instance account-a open https://example.com/login
+bb-browser --instance account-a fill @1 "user_a@example.com"
+bb-browser --instance account-a fill @2 "password_a"
+bb-browser --instance account-a click @3
+
+bb-browser --instance account-b open https://example.com/login
+bb-browser --instance account-b fill @1 "user_b@example.com"
+
+# 同时从两个账号获取数据
+bb-browser --instance account-a site twitter/search "AI"
+bb-browser --instance account-b site twitter/search "AI"
 ```
 
-配置示例（Claude Code / Cursor）：
+### 实例管理
+
+```bash
+bb-browser instance list                     # 列出所有实例
+bb-browser instance stop <id>                # 停止实例的 daemon
+bb-browser instance rename <old-id> <new-id> # 重命名实例
+bb-browser instance delete <id>              # 删除实例（含 Chrome profile）
+```
+
+注意：
+- 每个 instance 会启动独立的 Chrome 进程和 daemon
+- 首次使用新 instance 时自动创建，无需手动初始化
+- 不指定 `--instance` 时使用默认实例，行为和以前完全一样
+- 登录态在 instance 内持久化，重启后仍然有效
+- 多 session 共享同一 instance 时用 `--tab <id>` 避免互相干扰
+- 删除 instance 会同时删除 Chrome profile 和所有登录态，不可恢复
+
+## MCP 集成
+
 ```json
 {
   "mcpServers": {
     "bb-browser": {
       "command": "npx",
       "args": ["-y", "bb-browser", "--mcp"]
+    }
+  }
+}
+```
+
+多实例 MCP 配置：
+```json
+{
+  "mcpServers": {
+    "bb-browser-a": {
+      "command": "npx",
+      "args": ["-y", "bb-browser", "--mcp"],
+      "env": { "BB_BROWSER_INSTANCE": "account-a" }
+    },
+    "bb-browser-b": {
+      "command": "npx",
+      "args": ["-y", "bb-browser", "--mcp"],
+      "env": { "BB_BROWSER_INSTANCE": "account-b" }
     }
   }
 }

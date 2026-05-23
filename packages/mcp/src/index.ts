@@ -430,6 +430,54 @@ server.tool("site_update", "Update community adapter repository", {}, async () =
 });
 
 // ---------------------------------------------------------------------------
+// Instance management tools
+// ---------------------------------------------------------------------------
+
+function runInstanceCli(args: string[]): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    execFile(process.execPath, [getCliPath(), "instance", ...args, "--json"], {
+      encoding: "utf8", timeout: 15000,
+    }, (error, stdout, stderr) => {
+      const trimmed = stdout.trim();
+      let parsed: unknown = null;
+      try { parsed = JSON.parse(trimmed); } catch {}
+      if (error) {
+        reject(new Error(stderr.trim() || stdout.trim() || "Instance command failed"));
+        return;
+      }
+      resolve(parsed ?? trimmed);
+    });
+  });
+}
+
+server.tool("instance_list", "List all browser instances (each has independent Chrome profile and login state)", {}, async () => {
+  try { return textResult(await runInstanceCli(["list"])); }
+  catch (e) { return errorResult(e instanceof Error ? e.message : String(e)); }
+});
+
+server.tool("instance_stop", "Stop a running browser instance's daemon", {
+  id: z.string().describe("Instance ID to stop"),
+}, async ({ id }) => {
+  try { return textResult(await runInstanceCli(["stop", id])); }
+  catch (e) { return errorResult(e instanceof Error ? e.message : String(e)); }
+});
+
+server.tool("instance_rename", "Rename a browser instance (stops daemon if running, moves Chrome profile)", {
+  oldId: z.string().describe("Current instance ID"),
+  newId: z.string().describe("New instance ID"),
+}, async ({ oldId, newId }) => {
+  try { return textResult(await runInstanceCli(["rename", oldId, newId])); }
+  catch (e) { return errorResult(e instanceof Error ? e.message : String(e)); }
+});
+
+server.tool("instance_delete", "Delete a browser instance and its Chrome profile (irreversible)", {
+  id: z.string().describe("Instance ID to delete"),
+}, async ({ id }) => {
+  try { return textResult(await runInstanceCli(["delete", id])); }
+  catch (e) { return errorResult(e instanceof Error ? e.message : String(e)); }
+});
+
+// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 
