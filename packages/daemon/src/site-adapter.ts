@@ -8,16 +8,15 @@
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
-import { homedir } from "node:os";
+import { BB_BROWSER_ROOT } from "@bb-browser/shared";
 import type { CdpConnection } from "./cdp-connection.js";
 
 // ---------------------------------------------------------------------------
-// Paths
+// Paths — shared across instances (sites are code, not user state)
 // ---------------------------------------------------------------------------
 
-const BB_DIR = join(homedir(), ".bb-browser");
-const LOCAL_SITES_DIR = join(BB_DIR, "sites");
-const COMMUNITY_SITES_DIR = join(BB_DIR, "bb-sites");
+const LOCAL_SITES_DIR = join(BB_BROWSER_ROOT, "sites");
+const COMMUNITY_SITES_DIR = join(BB_BROWSER_ROOT, "bb-sites");
 
 // ---------------------------------------------------------------------------
 // Types

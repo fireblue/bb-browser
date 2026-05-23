@@ -39,7 +39,7 @@ import { GetClipWebResultSchema, type GetClipWebCommand } from "../../../node_mo
 import { COMMANDS, commandToJsonSchema } from "@bb-browser/shared";
 import { COMMAND_TIMEOUT } from "@bb-browser/shared";
 import type { Request } from "@bb-browser/shared";
-import { DAEMON_DIR as SHARED_DAEMON_DIR } from "@bb-browser/shared";
+import { BB_BROWSER_ROOT, getInstanceId } from "@bb-browser/shared";
 
 import { CdpConnection } from "./cdp-connection.js";
 import { dispatchRequest } from "./command-dispatch.js";
@@ -49,19 +49,21 @@ import { dispatchRequest } from "./command-dispatch.js";
 // ---------------------------------------------------------------------------
 
 const LOG_PREFIX = "[hub-bridge]";
-const PROVIDER_NAME = "bb-browser";
-const BROWSER_CLIP_ALIAS = "browser";
+const INSTANCE_ID = getInstanceId();
+const PROVIDER_NAME = INSTANCE_ID === "default" ? "bb-browser" : `bb-browser-${INSTANCE_ID}`;
+const BROWSER_CLIP_ALIAS = INSTANCE_ID === "default" ? "browser" : `browser-${INSTANCE_ID}`;
 const BROWSER_CLIP_PACKAGE = "browser";
 const BROWSER_CLIP_DOMAIN = "\u6d4f\u89c8\u5668";
 const RECONNECT_DELAY_MS = 5000;
 const REGISTER_TIMEOUT_MS = 10000;
 const HEARTBEAT_INTERVAL_MS = 15000;
 
-const STREAMER_PORT = "3334";
-const STREAMER_API_BASE = `http://127.0.0.1:${STREAMER_PORT}`;
+const STREAMER_PORT = "0";
+let streamerActualPort = 0;
+const getStreamerApiBase = () => `http://127.0.0.1:${streamerActualPort}`;
 
-const LOCAL_SITES_DIR = join(SHARED_DAEMON_DIR, "sites");
-const COMMUNITY_SITES_DIR = join(SHARED_DAEMON_DIR, "bb-sites");
+const LOCAL_SITES_DIR = join(BB_BROWSER_ROOT, "sites");
+const COMMUNITY_SITES_DIR = join(BB_BROWSER_ROOT, "bb-sites");
 
 const PINIX_DATA_ROOT = join(process.env.PINIX_HOME || join(homedir(), ".pinix"), "data");
 
@@ -102,7 +104,7 @@ const CLIP_VERSION = readPackageVersion();
 let streamerProcess: ChildProcess | null = null;
 
 function findStreamerBinary(): string | null {
-  const localPath = join(SHARED_DAEMON_DIR, "bin", "bb-viewer");
+  const localPath = join(BB_BROWSER_ROOT, "bin", "bb-viewer");
   if (existsSync(localPath)) return localPath;
   return "bb-viewer";
 }
@@ -115,20 +117,19 @@ function generateTurnCredentials(secret: string, ttlSeconds = 86400): { username
 }
 
 async function ensureStreamer(): Promise<void> {
-  if (streamerProcess && !streamerProcess.killed) {
+  if (streamerProcess && !streamerProcess.killed && streamerActualPort > 0) {
     try {
-      const resp = await fetch(`${STREAMER_API_BASE}/health`, { signal: AbortSignal.timeout(2000) });
+      const resp = await fetch(`${getStreamerApiBase()}/health`, { signal: AbortSignal.timeout(2000) });
       if (resp.ok) return;
     } catch {}
     try { streamerProcess.kill(); } catch {}
     streamerProcess = null;
+    streamerActualPort = 0;
   }
 
   const bin = findStreamerBinary();
   if (!bin) throw new Error("bb-viewer binary not found");
 
-  // Streamer no longer needs --cdp-port; daemon provides CDP WebSocket URLs
-  // via the /command endpoint.
   const args = ["--api-only", "--port", STREAMER_PORT];
 
   const turnUrl = process.env.TURN_URL;
@@ -145,23 +146,36 @@ async function ensureStreamer(): Promise<void> {
   streamerProcess = child;
 
   child.stdout?.on("data", (d: Buffer) => {
-    for (const line of d.toString().trim().split("\n")) console.error(`${LOG_PREFIX} [streamer] ${line}`);
+    for (const line of d.toString().trim().split("\n")) {
+      console.error(`${LOG_PREFIX} [streamer] ${line}`);
+      if (streamerActualPort === 0) {
+        const match = line.match(/(?:listening|port)\s*[:\s]*(\d+)/i);
+        if (match) streamerActualPort = parseInt(match[1], 10);
+      }
+    }
   });
   child.stderr?.on("data", (d: Buffer) => {
-    for (const line of d.toString().trim().split("\n")) console.error(`${LOG_PREFIX} [streamer] ${line}`);
+    for (const line of d.toString().trim().split("\n")) {
+      console.error(`${LOG_PREFIX} [streamer] ${line}`);
+      if (streamerActualPort === 0) {
+        const match = line.match(/(?:listening|port)\s*[:\s]*(\d+)/i);
+        if (match) streamerActualPort = parseInt(match[1], 10);
+      }
+    }
   });
   child.on("exit", (code) => {
     console.error(`${LOG_PREFIX} [streamer] exited with code ${code}`);
-    if (streamerProcess === child) streamerProcess = null;
+    if (streamerProcess === child) { streamerProcess = null; streamerActualPort = 0; }
   });
 
   const deadline = Date.now() + 10000;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 300));
+    if (streamerActualPort <= 0) continue;
     try {
-      const resp = await fetch(`${STREAMER_API_BASE}/health`, { signal: AbortSignal.timeout(2000) });
+      const resp = await fetch(`${getStreamerApiBase()}/health`, { signal: AbortSignal.timeout(2000) });
       if (resp.ok) {
-        console.error(`${LOG_PREFIX} Streamer ready at port ${STREAMER_PORT}`);
+        console.error(`${LOG_PREFIX} Streamer ready at port ${streamerActualPort}`);
         return;
       }
     } catch {}
@@ -170,7 +184,7 @@ async function ensureStreamer(): Promise<void> {
 }
 
 async function streamerCommand(path: string, body?: unknown): Promise<unknown> {
-  const url = `${STREAMER_API_BASE}${path}`;
+  const url = `${getStreamerApiBase()}${path}`;
   const opts: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json" },

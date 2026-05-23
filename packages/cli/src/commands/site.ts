@@ -22,12 +22,11 @@ import { handleJqResponse, sendCommand } from "../client.js";
 import { getHistoryDomains } from "../history-sqlite.js";
 import { readFileSync, readdirSync, existsSync, mkdirSync } from "node:fs";
 import { join, relative } from "node:path";
-import { homedir } from "node:os";
 import { execSync } from "node:child_process";
+import { BB_BROWSER_ROOT } from "@bb-browser/shared";
 
-const BB_DIR = join(homedir(), ".bb-browser");
-const LOCAL_SITES_DIR = join(BB_DIR, "sites");
-const COMMUNITY_SITES_DIR = join(BB_DIR, "bb-sites");
+const LOCAL_SITES_DIR = join(BB_BROWSER_ROOT, "sites");
+const COMMUNITY_SITES_DIR = join(BB_BROWSER_ROOT, "bb-sites");
 const COMMUNITY_REPO = "https://github.com/epiral/bb-sites.git";
 
 function checkCliUpdate(): void {
@@ -312,7 +311,7 @@ async function siteSearch(query: string, options: SiteOptions): Promise<void> {
 }
 
 function siteUpdate(options: SiteOptions = {}): void {
-  mkdirSync(BB_DIR, { recursive: true });
+  mkdirSync(BB_BROWSER_ROOT, { recursive: true });
   const updateMode = existsSync(join(COMMUNITY_SITES_DIR, ".git")) ? "pull" : "clone";
 
   if (updateMode === "pull") {
