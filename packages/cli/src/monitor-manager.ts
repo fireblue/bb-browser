@@ -16,18 +16,19 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Request, Response } from "@bb-browser/shared";
+import { getInstanceDir } from "@bb-browser/shared";
 import { discoverCdpPort } from "./cdp-discovery.js";
 
 // ---------------------------------------------------------------------------
-// Paths
+// Paths — per-instance
 // ---------------------------------------------------------------------------
 
-const MONITOR_DIR = path.join(os.homedir(), ".bb-browser");
+const MONITOR_DIR = getInstanceDir();
 const PID_FILE = path.join(MONITOR_DIR, "monitor.pid");
 const PORT_FILE = path.join(MONITOR_DIR, "monitor.port");
 const TOKEN_FILE = path.join(MONITOR_DIR, "monitor.token");
 
-const DEFAULT_MONITOR_PORT = 19826;
+const DEFAULT_MONITOR_PORT = 0;
 
 // ---------------------------------------------------------------------------
 // Low-level HTTP helpers
@@ -158,6 +159,14 @@ export async function ensureMonitorRunning(): Promise<{ port: number; token: str
   // Pre-write token so the CLI can read it immediately after spawn
   await writeFile(TOKEN_FILE, token, { mode: 0o600 });
 
+  const monitorEnv: Record<string, string> = { ...process.env } as Record<string, string>;
+  if (process.env.BB_BROWSER_INSTANCE) {
+    monitorEnv.BB_BROWSER_INSTANCE = process.env.BB_BROWSER_INSTANCE;
+  }
+  if (process.env.BB_BROWSER_HOME) {
+    monitorEnv.BB_BROWSER_HOME = process.env.BB_BROWSER_HOME;
+  }
+
   const child = spawn(process.execPath, [
     monitorScript,
     "--cdp-host", cdp.host,
@@ -167,21 +176,25 @@ export async function ensureMonitorRunning(): Promise<{ port: number; token: str
   ], {
     detached: true,
     stdio: "ignore",
+    env: monitorEnv,
   });
   child.unref();
 
   // Wait for the monitor to become healthy (up to 5 seconds)
+  // With dynamic port (0), re-read PORT_FILE each iteration to discover actual port
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 200));
+    const actualPort = await readPortFile();
+    if (!actualPort) continue;
     try {
       const status = await httpJson<{ running?: boolean }>(
         "GET",
-        `http://127.0.0.1:${monitorPort}/status`,
+        `http://127.0.0.1:${actualPort}/status`,
         token,
       );
       if (status.running) {
-        return { port: monitorPort, token };
+        return { port: actualPort, token };
       }
     } catch {
       // Not ready yet

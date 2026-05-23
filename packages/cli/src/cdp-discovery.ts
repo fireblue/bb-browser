@@ -3,14 +3,16 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { getInstanceDir, getInstanceId } from "@bb-browser/shared";
 import { parseOpenClawJson } from "./openclaw-json.js";
 
 const DEFAULT_CDP_PORT = 9222;
-const MANAGED_BROWSER_DIR = path.join(os.homedir(), ".bb-browser", "browser");
+const INSTANCE_DIR = getInstanceDir();
+const MANAGED_BROWSER_DIR = path.join(INSTANCE_DIR, "browser");
 const MANAGED_USER_DATA_DIR = path.join(MANAGED_BROWSER_DIR, "user-data");
 const MANAGED_PORT_FILE = path.join(MANAGED_BROWSER_DIR, "cdp-port");
-const CDP_CACHE_FILE = path.join(os.tmpdir(), "bb-browser-cdp-cache.json");
-const CACHE_TTL_MS = 30000; // 缓存有效期 30 秒
+const CDP_CACHE_FILE = path.join(INSTANCE_DIR, "cdp-cache.json");
+const CACHE_TTL_MS = 30000;
 
 function execFileAsync(command: string, args: string[], timeout: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -145,7 +147,7 @@ export async function isManagedBrowserRunning(): Promise<boolean> {
   }
 }
 
-export async function launchManagedBrowser(port: number = DEFAULT_CDP_PORT): Promise<{ host: string; port: number } | null> {
+export async function launchManagedBrowser(port: number = 0): Promise<{ host: string; port: number } | null> {
   const executable = findBrowserExecutable();
   if (!executable) {
     return null;
@@ -153,15 +155,17 @@ export async function launchManagedBrowser(port: number = DEFAULT_CDP_PORT): Pro
 
   await mkdir(MANAGED_USER_DATA_DIR, { recursive: true });
 
-  // Set profile name so the Chrome window shows "bb-browser" in the title bar
+  const instanceId = getInstanceId();
+  const profileName = instanceId === "default" ? "bb-browser" : `bb-browser-${instanceId}`;
+
   const defaultProfileDir = path.join(MANAGED_USER_DATA_DIR, "Default");
   const prefsPath = path.join(defaultProfileDir, "Preferences");
   await mkdir(defaultProfileDir, { recursive: true });
   try {
     let prefs: Record<string, unknown> = {};
     try { prefs = JSON.parse(await readFile(prefsPath, "utf8")); } catch {}
-    if (!(prefs.profile as Record<string, unknown>)?.name || (prefs.profile as Record<string, unknown>).name !== "bb-browser") {
-      prefs.profile = { ...(prefs.profile as Record<string, unknown> || {}), name: "bb-browser" };
+    if (!(prefs.profile as Record<string, unknown>)?.name || (prefs.profile as Record<string, unknown>).name !== profileName) {
+      prefs.profile = { ...(prefs.profile as Record<string, unknown> || {}), name: profileName };
       await writeFile(prefsPath, JSON.stringify(prefs), "utf8");
     }
   } catch {}
@@ -181,23 +185,48 @@ export async function launchManagedBrowser(port: number = DEFAULT_CDP_PORT): Pro
     "about:blank",
   ];
 
+  let detectedPort = port;
+
   try {
     const child = spawn(executable, args, {
       detached: true,
-      stdio: "ignore",
+      stdio: port === 0 ? ["ignore", "ignore", "pipe"] : "ignore",
     });
+
+    if (port === 0 && child.stderr) {
+      const portPromise = new Promise<number>((resolve) => {
+        let buf = "";
+        const onData = (data: Buffer) => {
+          buf += data.toString();
+          const match = buf.match(/DevTools listening on ws:\/\/[\w.]+:(\d+)\//);
+          if (match) {
+            detectedPort = parseInt(match[1], 10);
+            child.stderr!.removeListener("data", onData);
+            resolve(detectedPort);
+          }
+        };
+        child.stderr!.on("data", onData);
+        setTimeout(() => resolve(0), 5000);
+      });
+      detectedPort = await portPromise;
+    }
+
     child.unref();
   } catch {
     return null;
   }
 
+  if (detectedPort <= 0) {
+    return null;
+  }
+
   await mkdir(MANAGED_BROWSER_DIR, { recursive: true });
-  await writeFile(MANAGED_PORT_FILE, String(port), "utf8");
+  await writeFile(MANAGED_PORT_FILE, String(detectedPort), "utf8");
 
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
-    if (await canConnect("127.0.0.1", port)) {
-      return { host: "127.0.0.1", port };
+    if (await canConnect("127.0.0.1", detectedPort)) {
+      return { host: "127.0.0.1", port: detectedPort };
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }

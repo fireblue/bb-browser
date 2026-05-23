@@ -51,7 +51,7 @@ export function getDaemonPath(): string {
 
 /**
  * Ensure the daemon is running and ready to accept commands.
- * - Reads ~/.bb-browser/daemon.json for pid, host, port, token
+ * - Reads ~/.bb-browser/instances/{id}/daemon.json for pid, host, port, token
  * - Checks if pid is alive via signal 0
  * - If pid dead, deletes stale daemon.json and spawns new daemon
  * - Checks health via GET /status
@@ -131,9 +131,19 @@ export async function ensureDaemon(): Promise<void> {
     if (hubToken) daemonArgs.push("--hub-token", hubToken);
   }
 
+  // Forward instance-related env vars to daemon
+  const daemonEnv: Record<string, string> = { ...process.env } as Record<string, string>;
+  if (process.env.BB_BROWSER_INSTANCE) {
+    daemonEnv.BB_BROWSER_INSTANCE = process.env.BB_BROWSER_INSTANCE;
+  }
+  if (process.env.BB_BROWSER_HOME) {
+    daemonEnv.BB_BROWSER_HOME = process.env.BB_BROWSER_HOME;
+  }
+
   const child = spawn(process.execPath, daemonArgs, {
     detached: true,
     stdio: "ignore",
+    env: daemonEnv,
   });
   child.unref();
 
