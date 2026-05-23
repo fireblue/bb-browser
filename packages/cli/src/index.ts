@@ -25,7 +25,7 @@ import { consoleCommand } from "./commands/console.js";
 import { errorsCommand } from "./commands/errors.js";
 import { traceCommand } from "./commands/trace.js";
 import { siteCommand } from "./commands/site.js";
-import { shutdownCommand, startCommand, statusCommand } from "./commands/daemon.js";
+import { shutdownCommand, startCommand, statusCommand, instancesCommand } from "./commands/daemon.js";
 import { getDaemonPath } from "./daemon-manager.js";
 import { setJqExpression } from "./client.js";
 
@@ -93,6 +93,7 @@ bb-browser - AI Agent 浏览器自动化工具
   console [--clear]            查看/清空控制台 (--tab required)
   errors [--clear]             查看/清空 JS 错误 (--tab required)
   trace start|stop|status      录制用户操作 (--tab required)
+  instances                    列出所有浏览器实例
   daemon [start|status|stop]   管理 daemon
 
 选项：
@@ -424,6 +425,11 @@ async function main(): Promise<void> {
         break;
       }
 
+      case "instances": {
+        await instancesCommand({ json: parsed.flags.json });
+        break;
+      }
+
       case "daemon": {
         const daemonSubcommand = parsed.args[0];
         if (daemonSubcommand === "status") {
@@ -436,6 +442,10 @@ async function main(): Promise<void> {
         }
         if (daemonSubcommand === "start") {
           await startCommand({ json: parsed.flags.json });
+          break;
+        }
+        if (daemonSubcommand === "instances") {
+          await instancesCommand({ json: parsed.flags.json });
           break;
         }
 
